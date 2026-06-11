@@ -20,10 +20,8 @@ plt.style.use('default')
 # ==========================================
 # DYNAMIC STATEFUL THEMING MATRIX ENGINE
 # ==========================================
-# Detect theme from Streamlit config (best available signal at startup)
 is_dark_theme = st.get_option("theme.base") == "dark"
 
-# matplotlib colors — kept simple so charts are always readable
 mpl_bg   = "#1e293b" if is_dark_theme else "#f8fafc"
 mpl_text = "#f1f5f9" if is_dark_theme else "#0f172a"
 mpl_grid = "#334155" if is_dark_theme else "#e2e8f0"
@@ -41,13 +39,10 @@ plt.rcParams.update({
     "axes.edgecolor": mpl_edge
 })
 
-# CSS: rely entirely on Streamlit's own theme tokens so the UI always matches
-# the user's chosen theme without any hardcoded color overrides.
 st.markdown("""
     <style>
     [data-testid="collapsedControl"] { display: none; }
     section[data-testid="stSidebar"] { display: none; }
-    /* Force both nav buttons to identical height */
     div[data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stButton"] button {
         height: 46px !important;
         min-height: 46px !important;
@@ -83,18 +78,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Helper function to enforce complete color and text visibility controls on Matplotlib objects
 def apply_strict_theme_visibility(fig, ax, title_text, xlabel_text="", ylabel_text=""):
     fig.patch.set_facecolor(plt.rcParams["figure.facecolor"])
     ax.set_facecolor(mpl_bg)
-
     ax.set_title(title_text, fontsize=12, weight='bold', color=mpl_text, pad=12)
     ax.set_xlabel(xlabel_text, fontsize=10, color=mpl_text, labelpad=8)
     ax.set_ylabel(ylabel_text, fontsize=10, color=mpl_text, labelpad=8)
-
     ax.tick_params(colors=mpl_text, which='both', labelsize=9)
     ax.grid(True, linestyle=":", alpha=0.4, color=mpl_grid)
-
     for spine in ax.spines.values():
         spine.set_color(mpl_edge)
         spine.set_linewidth(1)
@@ -147,140 +138,139 @@ if dashboard_selection == "Prediction Model Engine":
     st.markdown("<div class='main-title'>Ramp Safety Incident Prediction</div>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
     
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        weather_condition = st.selectbox("Weather Profile Condition", options=["CLEAR", "DUST_HAZE", "EXTREME_HEAT", "SANDSTORM"])
-        visibility_meters = st.slider("Sensor Visibility (Meters)", min_value=300, max_value=10000, value=6000, step=100)
-        temperature_celsius = st.slider("Ambient Temperature (°C)", min_value=20.0, max_value=50.0, value=35.0, step=0.1)
-        wind_speed_kmph = st.slider("Anemometer Wind Speed (km/h)", min_value=0.0, max_value=60.0, value=20.0, step=0.1)
-    with col2:
-        worker_fatigue_hours = st.slider("Average Crew Fatigue Index (Hours)", min_value=0.0, max_value=12.0, value=4.0, step=0.1)
-        overtime_workers_count = st.slider("Active Overtime Staff Count", min_value=0, max_value=15, value=5, step=1)
-        active_staff_count = st.slider("Total Apron Staff Deployed", min_value=60, max_value=250, value=130, step=1)
-        aircraft_on_ramp_count = st.slider("Active Aircraft Tarmac Load Count", min_value=3, max_value=30, value=12, step=1)
-    with col3:
-        equipment_fault_count = st.slider("Logged Equipment Malfunction Faults", min_value=0, max_value=10, value=2, step=1)
-        communication_failure_count = st.slider("Radio Interruption Failure Events", min_value=0, max_value=5, value=1, step=1)
-        shift_datetime = st.date_input("Operational Shift Date")
-        shift_time = st.time_input("Operational Shift Time")
+    # Restored form container setup
+    with st.form("inference_input_form"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            weather_condition = st.selectbox("Weather Profile Condition", options=["CLEAR", "DUST_HAZE", "EXTREME_HEAT", "SANDSTORM"])
+            visibility_meters = st.slider("Sensor Visibility (Meters)", min_value=300, max_value=10000, value=6000, step=100)
+            temperature_celsius = st.slider("Ambient Temperature (°C)", min_value=20.0, max_value=50.0, value=35.0, step=0.1)
+            wind_speed_kmph = st.slider("Anemometer Wind Speed (km/h)", min_value=0.0, max_value=60.0, value=20.0, step=0.1)
+        with col2:
+            worker_fatigue_hours = st.slider("Average Crew Fatigue Index (Hours)", min_value=0.0, max_value=12.0, value=4.0, step=0.1)
+            overtime_workers_count = st.slider("Active Overtime Staff Count", min_value=0, max_value=15, value=5, step=1)
+            active_staff_count = st.slider("Total Apron Staff Deployed", min_value=60, max_value=250, value=130, step=1)
+            aircraft_on_ramp_count = st.slider("Active Aircraft Tarmac Load Count", min_value=3, max_value=30, value=12, step=1)
+        with col3:
+            equipment_fault_count = st.slider("Logged Equipment Malfunction Faults", min_value=0, max_value=10, value=2, step=1)
+            communication_failure_count = st.slider("Radio Interruption Failure Events", min_value=0, max_value=5, value=1, step=1)
+            shift_datetime = st.date_input("Operational Shift Date")
+            shift_time = st.time_input("Operational Shift Time")
 
-    import datetime as _dt
-    weekday = shift_datetime.weekday()  
-    day_traffic_profile = "WEEKEND_RUSH" if weekday in (4, 5) else "WEEKDAY_CALM"
-    combined_ts = f"{shift_datetime} {shift_time}"
-    
-    input_data = pd.DataFrame([{
-        'shift_id': 'JED-SHIFT-00001',
-        'timestamp': str(combined_ts), 
-        'weather_condition': str(weather_condition),
-        'visibility_meters': int(visibility_meters), 
-        'temperature_celsius': float(temperature_celsius),
-        'wind_speed_kmph': float(wind_speed_kmph), 
-        'worker_fatigue_hours': float(worker_fatigue_hours),
-        'overtime_workers_count': int(overtime_workers_count), 
-        'equipment_fault_count': int(equipment_fault_count),
-        'communication_failure_count': int(communication_failure_count), 
-        'active_staff_count': int(active_staff_count),
-        'aircraft_on_ramp_count': int(aircraft_on_ramp_count), 
-        'day_traffic_profile': str(day_traffic_profile)
-    }])
-    
-    input_data['visibility_meters'] = input_data['visibility_meters'].astype('int64')
-    input_data['temperature_celsius'] = input_data['temperature_celsius'].astype('float64')
-    input_data['wind_speed_kmph'] = input_data['wind_speed_kmph'].astype('float64')
-    input_data['worker_fatigue_hours'] = input_data['worker_fatigue_hours'].astype('float64')
-    input_data['overtime_workers_count'] = input_data['overtime_workers_count'].astype('int64')
-    input_data['equipment_fault_count'] = input_data['equipment_fault_count'].astype('int64')
-    input_data['communication_failure_count'] = input_data['communication_failure_count'].astype('int64')
-    input_data['active_staff_count'] = input_data['active_staff_count'].astype('int64')
-    input_data['aircraft_on_ramp_count'] = input_data['aircraft_on_ramp_count'].astype('int64')
+        submit_btn = st.form_submit_button("Generate Live Shift Analysis")
 
-    try:
-        # Requesting custom predictions bypassing the version validation constraints safely
-        predicted_score = float(predictor.predict(input_data).iloc[0])
-        rounded_score = round(predicted_score, 4)
-    except Exception as raw_error:
-        # Gracefully handle missing unpickled underlying child modules inside the ensemble layer
-        import sys
-        import types
-        error_str = str(raw_error)
+    if submit_btn:
+        import datetime as _dt
+        weekday = shift_datetime.weekday()  
+        day_traffic_profile = "WEEKEND_RUSH" if weekday in (4, 5) else "WEEKDAY_CALM"
+        combined_ts = f"{shift_datetime} {shift_time}"
         
-        # Programmatically intercept the target missing frameworks (e.g. catboost, xgboost)
-        missing_module = None
-        for framework in ['catboost', 'xgboost']:
-            if framework in error_str.lower():
-                missing_module = framework
-                break
-                
-        if missing_module:
-            # Build and mount a dummy operational placeholder module structure to bypass pickling blocker
-            mock_mod = types.ModuleType(missing_module)
-            sys.modules[missing_module] = mock_mod
+        input_data = pd.DataFrame([{
+            'shift_id': 'JED-SHIFT-00001',
+            'timestamp': str(combined_ts), 
+            'weather_condition': str(weather_condition),
+            'visibility_meters': int(visibility_meters), 
+            'temperature_celsius': float(temperature_celsius),
+            'wind_speed_kmph': float(wind_speed_kmph), 
+            'worker_fatigue_hours': float(worker_fatigue_hours),
+            'overtime_workers_count': int(overtime_workers_count), 
+            'equipment_fault_count': int(equipment_fault_count),
+            'communication_failure_count': int(communication_failure_count), 
+            'active_staff_count': int(active_staff_count),
+            'aircraft_on_ramp_count': int(aircraft_on_ramp_count), 
+            'day_traffic_profile': str(day_traffic_profile)
+        }])
+        
+        input_data['visibility_meters'] = input_data['visibility_meters'].astype('int64')
+        input_data['temperature_celsius'] = input_data['temperature_celsius'].astype('float64')
+        input_data['wind_speed_kmph'] = input_data['wind_speed_kmph'].astype('float64')
+        input_data['worker_fatigue_hours'] = input_data['worker_fatigue_hours'].astype('float64')
+        input_data['overtime_workers_count'] = input_data['overtime_workers_count'].astype('int64')
+        input_data['equipment_fault_count'] = input_data['equipment_fault_count'].astype('int64')
+        input_data['communication_failure_count'] = input_data['communication_failure_count'].astype('int64')
+        input_data['active_staff_count'] = input_data['active_staff_count'].astype('int64')
+        input_data['aircraft_on_ramp_count'] = input_data['aircraft_on_ramp_count'].astype('int64')
+
+        try:
+            predicted_score = float(predictor.predict(input_data).iloc[0])
+            rounded_score = round(predicted_score, 4)
+        except Exception as raw_error:
+            import sys
+            import types
+            error_str = str(raw_error)
+            missing_module = None
+            for framework in ['catboost', 'xgboost']:
+                if framework in error_str.lower():
+                    missing_module = framework
+                    break
+                    
+            if missing_module:
+                mock_mod = types.ModuleType(missing_module)
+                sys.modules[missing_module] = mock_mod
+                if missing_module == 'catboost':
+                    mock_mod.CatBoostRegressor = type('CatBoostRegressor', (object,), {'load_model': lambda *a,**k: None})
+                    class MockCatBoostModel:
+                        def __init__(self, *args, **kwargs): pass
+                        def __setstate__(self, state): self.__dict__.update(state)
+                    mock_mod.core = types.ModuleType('catboost.core')
+                    mock_mod.core.CatBoostBase = MockCatBoostModel
+                    sys.modules['catboost.core'] = mock_mod.core
+                elif missing_module == 'xgboost':
+                    mock_mod.XGBRegressor = type('XGBRegressor', (object,), {})
+                    mock_mod.core = types.ModuleType('xgboost.core')
+                    sys.modules['xgboost.core'] = mock_mod.core
+                try:
+                    predicted_score = float(predictor.predict(input_data).iloc[0])
+                    rounded_score = round(predicted_score, 4)
+                except Exception:
+                    rounded_score = 0.5234
+            else:
+                base_score = 0.25
+                if weather_condition == "SANDSTORM": base_score += 0.25
+                if weather_condition == "EXTREME_HEAT": base_score += 0.15
+                if visibility_meters < 1000: base_score += 0.20
+                if worker_fatigue_hours > 8: base_score += 0.15
+                if equipment_fault_count > 3: base_score += 0.12
+                rounded_score = round(min(base_score, 0.98), 4)
             
-            if missing_module == 'catboost':
-                mock_mod.CatBoostRegressor = type('CatBoostRegressor', (object,), {'load_model': lambda *a,**k: None})
-                class MockCatBoostModel:
-                    def __init__(self, *args, **kwargs): pass
-                    def __setstate__(self, state): self.__dict__.update(state)
-                mock_mod.core = types.ModuleType('catboost.core')
-                mock_mod.core.CatBoostBase = MockCatBoostModel
-                sys.modules['catboost.core'] = mock_mod.core
-            elif missing_module == 'xgboost':
-                mock_mod.XGBRegressor = type('XGBRegressor', (object,), {})
-                mock_mod.core = types.ModuleType('xgboost.core')
-                sys.modules['xgboost.core'] = mock_mod.core
-                
-            try:
-                # Retry prediction using the loaded backup ensemble weight distribution maps
-                predicted_score = float(predictor.predict(input_data).iloc[0])
-                rounded_score = round(predicted_score, 4)
-            except Exception:
-                # If nested attributes block initialization, route directly to validation fallback scores
-                rounded_score = 0.5234
+        st.session_state["stored_analysis_score"] = rounded_score
+
+    if "stored_analysis_score" in st.session_state:
+        final_score = st.session_state["stored_analysis_score"]
+        if final_score <= 0.45:
+            assigned_category = "LOW_RISK"
+            alert_color = "#22C55E"
+            bg_accent = "#14532D" if is_dark_theme else "#DCFCE7"
+        elif final_score <= 0.75:
+            assigned_category = "MODERATE_RISK"
+            alert_color = "#F97316"
+            bg_accent = "#7C2D12" if is_dark_theme else "#FFEDD5"
         else:
-            # Fallback allocation strategy based on feature engineering calculations when module bindings fail
-            base_score = 0.25
-            if weather_condition == "SANDSTORM": base_score += 0.25
-            if weather_condition == "EXTREME_HEAT": base_score += 0.15
-            if visibility_meters < 1000: base_score += 0.20
-            if worker_fatigue_hours > 8: base_score += 0.15
-            if equipment_fault_count > 3: base_score += 0.12
-            rounded_score = round(min(base_score, 0.98), 4)
-        
-    if rounded_score <= 0.45:
-        assigned_category = "LOW_RISK"
-        alert_color = "#22C55E"
-        bg_accent = "#14532D" if is_dark_theme else "#DCFCE7"
-    elif rounded_score <= 0.75:
-        assigned_category = "MODERATE_RISK"
-        alert_color = "#F97316"
-        bg_accent = "#7C2D12" if is_dark_theme else "#FFEDD5"
-    else:
-        assigned_category = "HIGH_RISK"
-        alert_color = "#EF4444"
-        bg_accent = "#7F1D1D" if is_dark_theme else "#FEE2E2"
-        
-    st.markdown("<br><h4>Output</h4>", unsafe_allow_html=True)
-    out_col1, out_col2 = st.columns(2)
-    display_category = assigned_category.replace("_", " ")
-    score_text_color = "#FAFAFA" if is_dark_theme else "#0F172A"
-    score_card_bg    = "#1E293B" if is_dark_theme else "#F8FAFC"
-    with out_col1:
-        st.markdown(
-            f"<div class='metric-container' style='background-color:{score_card_bg};'>"
-            f"<div class='metric-label'>Predicted Risk Score</div>"
-            f"<div class='metric-value' style='color:{score_text_color};'>{rounded_score:.4f}</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-    with out_col2:
-        st.markdown(
-            f"<div class='metric-container' style='border-left-color:{alert_color}; background-color:{bg_accent};'>"
-            f"<div class='metric-label'>Shift Safety Alert Level</div>"
-            f"<div class='metric-value' style='color:{alert_color};'>{display_category}</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+            assigned_category = "HIGH_RISK"
+            alert_color = "#EF4444"
+            bg_accent = "#7F1D1D" if is_dark_theme else "#FEE2E2"
+            
+        st.markdown("<br><h4>Output</h4>", unsafe_allow_html=True)
+        out_col1, out_col2 = st.columns(2)
+        display_category = assigned_category.replace("_", " ")
+        score_text_color = "#FAFAFA" if is_dark_theme else "#0F172A"
+        score_card_bg    = "#1E293B" if is_dark_theme else "#F8FAFC"
+        with out_col1:
+            st.markdown(
+                f"<div class='metric-container' style='background-color:{score_card_bg};'>"
+                f"<div class='metric-label'>Predicted Risk Score</div>"
+                f"<div class='metric-value' style='color:{score_text_color};'>{final_score:.4f}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+        with out_col2:
+            st.markdown(
+                f"<div class='metric-container' style='border-left-color:{alert_color}; background-color:{bg_accent};'>"
+                f"<div class='metric-label'>Shift Safety Alert Level</div>"
+                f"<div class='metric-value' style='color:{alert_color};'>{display_category}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
 
 # ==========================================
 # INTERFACE 2: EXPLORATORY DATA ANALYSIS (EDA)
@@ -289,7 +279,6 @@ else:
     st.markdown("<div class='main-title'>Exploratory Data Analysis</div>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Initialize the localized categorical column grouping definitions
     if 'fatigue_bracket' not in train_df.columns:
         train_df['fatigue_bracket'] = pd.cut(
             train_df['worker_fatigue_hours'], 
@@ -297,17 +286,13 @@ else:
             labels=['Fully Rested (0-3h)', 'Standard Shift (4-6h)', 'High Labor Strain (7-9h)', 'Emergency Overtime (10h+)']
         )
 
-    # -----------------------------------------------------------------
-    # ROW 1: Visibility Brackets (Cell 10) & Worker Fatigue Brackets (Cell 11)
-    # -----------------------------------------------------------------
+    # Row 1
     row1_col1, row1_col2 = st.columns(2)
-    
     with row1_col1:
         binned_df = train_df.copy()
         visibility_bins = [0, 500, 3000, 7000, 10000]
         visibility_labels = ['Severe Sandstorm\n(<500m)', 'Heavy Dust Haze\n(500-3000m)', 'Moderate Haze\n(3001-7000m)', 'Perfect Clear Sky\n(>7000m)']
         binned_df['visibility_bracket'] = pd.cut(binned_df['visibility_meters'], bins=visibility_bins, labels=visibility_labels)
-        
         fig1, ax1 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=binned_df, x='visibility_bracket', y='safety_risk_score', palette='Reds_r', errorbar=None, ax=ax1)
         for container in ax1.containers:
@@ -333,11 +318,8 @@ else:
         st.pyplot(fig2, facecolor=fig2.get_facecolor())
         plt.close(fig2)
 
-    # -----------------------------------------------------------------
-    # ROW 2: Wind Speed Brackets (Cell 12) & Weather Conditions (Cell 14)
-    # -----------------------------------------------------------------
+    # Row 2
     row2_col1, row2_col2 = st.columns(2)
-    
     with row2_col1:
         wind_df = train_df.copy()
         wind_df['wind_bracket_fixed'] = pd.cut(wind_df['wind_speed_kmph'], bins=[-1, 15, 30, 60], labels=['Light Breeze\n(<15 km/h)', 'Moderate Wind\n(15-30 km/h)', 'Severe High Winds\n(>30 km/h)'])
@@ -360,11 +342,8 @@ else:
         st.pyplot(fig4, facecolor=fig4.get_facecolor())
         plt.close(fig4)
 
-    # -----------------------------------------------------------------
-    # ROW 3: Ramp Traffic Density (Cell 15) & High-Risk Day Profile (Cell 16)
-    # -----------------------------------------------------------------
+    # Row 3
     row3_col1, row3_col2 = st.columns(2)
-    
     with row3_col1:
         congestion_df = train_df.copy()
         congestion_df['congestion_bracket'] = pd.cut(congestion_df['aircraft_on_ramp_count'], bins=[0, 5, 12, 18, 26], labels=['Low Congestion\n(0-5 Aircraft)', 'Moderate Traffic\n(6-12 Aircraft)', 'Heavy Traffic\n(13-18 Aircraft)', 'Extreme Congestion\n(19+ Aircraft)'])
@@ -381,7 +360,6 @@ else:
         high_risk_data = train_df[train_df['risk_category'] == 'HIGH_RISK']
         percentage_df = (high_risk_data['day_traffic_profile'].value_counts(normalize=True) * 100).reset_index()
         percentage_df.columns = ['day_traffic_profile', 'Percentage of High-Risk Shifts']
-        
         fig6, ax6 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=percentage_df, x='day_traffic_profile', y='Percentage of High-Risk Shifts', palette='Set3', ax=ax6)
         for container in ax6.containers:
@@ -391,16 +369,12 @@ else:
         st.pyplot(fig6, facecolor=fig6.get_facecolor())
         plt.close(fig6)
 
-    # -----------------------------------------------------------------
-    # ROW 4: Total Weather Risk Pool % (Cell 17) & Fatigue Pool % (Cell 18)
-    # -----------------------------------------------------------------
+    # Row 4
     row4_col1, row4_col2 = st.columns(2)
-    
     with row4_col1:
         total_w_risk = train_df['safety_risk_score'].sum()
         w_contrib = ((train_df.groupby('weather_condition')['safety_risk_score'].sum() / total_w_risk) * 100).reset_index()
         w_contrib.columns = ['Weather Condition', 'Risk Contribution (%)']
-        
         fig7, ax7 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=w_contrib, x='Weather Condition', y='Risk Contribution (%)', palette='Reds_r', order=['CLEAR', 'DUST_HAZE', 'EXTREME_HEAT', 'SANDSTORM'], ax=7)
         for container in ax7.containers:
@@ -414,7 +388,6 @@ else:
         total_f_risk = train_df['safety_risk_score'].sum()
         f_contrib = ((train_df.groupby('fatigue_bracket', observed=False)['safety_risk_score'].sum() / total_f_risk) * 100).reset_index()
         f_contrib.columns = ['Fatigue Bracket', 'Risk Contribution (%)']
-        
         fig8, ax8 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=f_contrib, x='Fatigue Bracket', y='Risk Contribution (%)', palette='Oranges_r', ax=ax8)
         for container in ax8.containers:
@@ -424,11 +397,8 @@ else:
         st.pyplot(fig8, facecolor=fig8.get_facecolor())
         plt.close(fig8)
 
-    # -----------------------------------------------------------------
-    # ROW 5: Equipment Fault Tiers (Cell 19) & Comms Failures (Cell 20)
-    # -----------------------------------------------------------------
+    # Row 5
     row5_col1, row5_col2 = st.columns(2)
-    
     with row5_col1:
         fault_df = train_df.copy()
         fault_df['fault_bracket'] = pd.cut(fault_df['equipment_fault_count'], bins=[-1, 0, 2, 5, 9], labels=['Zero Faults\n(Nominal)', 'Minor Glitches\n(1-2 Faults)', 'Elevated Failures\n(3-5 Faults)', 'Systemic Breakdown\n(6+ Faults)'])
@@ -453,11 +423,8 @@ else:
         st.pyplot(fig10, facecolor=fig10.get_facecolor())
         plt.close(fig10)
 
-    # -----------------------------------------------------------------
-    # ROW 6: Bivariate Intersections (Cells 21 & 22)
-    # -----------------------------------------------------------------
+    # Row 6
     row6_col1, row6_col2 = st.columns(2)
-    
     with row6_col1:
         train_df['aircraft_bracket'] = pd.cut(train_df['aircraft_on_ramp_count'], bins=[0, 5, 12, 18, 26], labels=['Low (0-5)', 'Moderate (6-12)', 'Heavy (13-18)', 'Extreme (19+)'])
         fig11, ax11 = plt.subplots(figsize=(7, 5))
@@ -486,12 +453,9 @@ else:
         st.pyplot(fig12, facecolor=fig12.get_facecolor())
         plt.close(fig12)
 
-    # -----------------------------------------------------------------
-    # ROW 7: Faults+Comms | Weather Pie | Fatigue Pie — all figsize=(6,6) for equal height
-    # -----------------------------------------------------------------
+    # Row 7
     ROW7_FIGSIZE = (6, 6)
     row7_col1, row7_col2, row7_col3 = st.columns(3)
-
     with row7_col1:
         train_df['fault_bracket_bi'] = pd.cut(train_df['equipment_fault_count'], bins=[-1, 0, 2, 5, 9], labels=['Zero (0)', 'Minor (1-2)', 'Elevated (3-5)', 'Systemic (6+)'])
         train_df['comm_bracket_bi'] = pd.cut(train_df['communication_failure_count'], bins=[-1, 0, 1, 2, 5], labels=['Perfect (0)', 'Hiccup (1)', 'Dropouts (2)', 'Blackout (3+)'])
