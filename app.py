@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
+import datetime as _dt
 from autogluon.tabular import TabularPredictor
 
 # ==========================================
@@ -14,16 +15,13 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Reset global style sheets to standard defaults to avoid cross-contamination
 plt.style.use('default')
 
 # ==========================================
 # DYNAMIC STATEFUL THEMING MATRIX ENGINE
 # ==========================================
-# Detect theme from Streamlit config (best available signal at startup)
 is_dark_theme = st.get_option("theme.base") == "dark"
 
-# matplotlib colors — kept simple so charts are always readable
 mpl_bg   = "#1e293b" if is_dark_theme else "#f8fafc"
 mpl_text = "#f1f5f9" if is_dark_theme else "#0f172a"
 mpl_grid = "#334155" if is_dark_theme else "#e2e8f0"
@@ -41,13 +39,10 @@ plt.rcParams.update({
     "axes.edgecolor": mpl_edge
 })
 
-# CSS: rely entirely on Streamlit's own theme tokens so the UI always matches
-# the user's chosen theme without any hardcoded color overrides.
 st.markdown("""
     <style>
     [data-testid="collapsedControl"] { display: none; }
     section[data-testid="stSidebar"] { display: none; }
-    /* Force both nav buttons to identical height */
     div[data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stButton"] button {
         height: 46px !important;
         min-height: 46px !important;
@@ -83,18 +78,14 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# Helper function to enforce complete color and text visibility controls on Matplotlib objects
 def apply_strict_theme_visibility(fig, ax, title_text, xlabel_text="", ylabel_text=""):
     fig.patch.set_facecolor(plt.rcParams["figure.facecolor"])
     ax.set_facecolor(mpl_bg)
-
     ax.set_title(title_text, fontsize=12, weight='bold', color=mpl_text, pad=12)
     ax.set_xlabel(xlabel_text, fontsize=10, color=mpl_text, labelpad=8)
     ax.set_ylabel(ylabel_text, fontsize=10, color=mpl_text, labelpad=8)
-
     ax.tick_params(colors=mpl_text, which='both', labelsize=9)
     ax.grid(True, linestyle=":", alpha=0.4, color=mpl_grid)
-
     for spine in ax.spines.values():
         spine.set_color(mpl_edge)
         spine.set_linewidth(1)
@@ -242,7 +233,6 @@ if dashboard_selection == "Prediction Model Engine":
 
         try:
             predicted_score = float(predictor.predict(input_data).iloc[0])
-            # Blend model base logic with localized continuous weights to guarantee response changes
             blended_score = 0.70 * predicted_score + 0.30 * sensitivity_score
             rounded_score = round(blended_score, 4)
         except Exception:
@@ -295,7 +285,6 @@ else:
     st.markdown("<div class='main-title'>Exploratory Data Analysis</div>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
-    # Initialize the localized categorical column grouping definitions
     if 'fatigue_bracket' not in train_df.columns:
         train_df['fatigue_bracket'] = pd.cut(
             train_df['worker_fatigue_hours'], 
@@ -304,7 +293,7 @@ else:
         )
 
     # -----------------------------------------------------------------
-    # ROW 1: Visibility Brackets (Cell 10) & Worker Fatigue Brackets (Cell 11)
+    # ROW 1: Visibility Brackets & Worker Fatigue Brackets
     # -----------------------------------------------------------------
     row1_col1, row1_col2 = st.columns(2)
     
@@ -340,7 +329,7 @@ else:
         plt.close(fig2)
 
     # -----------------------------------------------------------------
-    # ROW 2: Wind Speed Brackets (Cell 12) & Weather Conditions (Cell 14)
+    # ROW 2: Wind Speed Brackets & Weather Conditions
     # -----------------------------------------------------------------
     row2_col1, row2_col2 = st.columns(2)
     
@@ -367,7 +356,7 @@ else:
         plt.close(fig4)
 
     # -----------------------------------------------------------------
-    # ROW 3: Ramp Traffic Density (Cell 15) & High-Risk Day Profile (Cell 16)
+    # ROW 3: Ramp Traffic Density & High-Risk Day Profile
     # -----------------------------------------------------------------
     row3_col1, row3_col2 = st.columns(2)
     
@@ -375,11 +364,11 @@ else:
         congestion_df = train_df.copy()
         congestion_df['congestion_bracket'] = pd.cut(congestion_df['aircraft_on_ramp_count'], bins=[0, 5, 12, 18, 26], labels=['Low Congestion\n(0-5 Aircraft)', 'Moderate Traffic\n(6-12 Aircraft)', 'Heavy Traffic\n(13-18 Aircraft)', 'Extreme Congestion\n(19+ Aircraft)'])
         fig5, ax5 = plt.subplots(figsize=(7, 4.5))
-        sns.barplot(data=congestion_df, x='congestion_bracket', y='safety_risk_score', palette='Blues', errorbar=None, ax=fig5.gca())
-        for container in fig5.gca().containers:
-            fig5.gca().bar_label(container, fmt='%.2f', fontsize=11, weight='bold', color=mpl_text)
-        apply_strict_theme_visibility(fig5, fig5.gca(), 'How Ramp Traffic Volume Controls Safety Risk Score', 'Simultaneous Aircraft Turns on the Ramp', 'Average Safety Risk Score')
-        fig5.gca().set_ylim(0, 1.0)
+        sns.barplot(data=congestion_df, x='congestion_bracket', y='safety_risk_score', palette='Blues', errorbar=None, ax=ax5)
+        for container in ax5.containers:
+            ax5.bar_label(container, fmt='%.2f', fontsize=11, weight='bold', color=mpl_text)
+        apply_strict_theme_visibility(fig5, ax5, 'How Ramp Traffic Volume Controls Safety Risk Score', 'Simultaneous Aircraft Turns on the Ramp', 'Average Safety Risk Score')
+        ax5.set_ylim(0, 1.0)
         st.pyplot(fig5, facecolor=fig5.get_facecolor())
         plt.close(fig5)
 
@@ -387,7 +376,6 @@ else:
         high_risk_data = train_df[train_df['risk_category'] == 'HIGH_RISK']
         percentage_df = (high_risk_data['day_traffic_profile'].value_counts(normalize=True) * 100).reset_index()
         percentage_df.columns = ['day_traffic_profile', 'Percentage of High-Risk Shifts']
-        
         fig6, ax6 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=percentage_df, x='day_traffic_profile', y='Percentage of High-Risk Shifts', palette='Set3', ax=ax6)
         for container in ax6.containers:
@@ -398,7 +386,7 @@ else:
         plt.close(fig6)
 
     # -----------------------------------------------------------------
-    # ROW 4: Total Weather Risk Pool % (Cell 17) & Fatigue Pool % (Cell 18)
+    # ROW 4: Total Weather Risk Pool % & Fatigue Pool %
     # -----------------------------------------------------------------
     row4_col1, row4_col2 = st.columns(2)
     
@@ -406,9 +394,9 @@ else:
         total_w_risk = train_df['safety_risk_score'].sum()
         w_contrib = ((train_df.groupby('weather_condition')['safety_risk_score'].sum() / total_w_risk) * 100).reset_index()
         w_contrib.columns = ['Weather Condition', 'Risk Contribution (%)']
-        
         fig7, ax7 = plt.subplots(figsize=(7, 4.5))
-        sns.barplot(data=w_contrib, x='Weather Condition', y='Risk Contribution (%)', palette='Reds_r', order=['CLEAR', 'DUST_HAZE', 'EXTREME_HEAT', 'SANDSTORM'], ax=fig7)
+        # FIXED: ax=ax7 instead of ax=fig7
+        sns.barplot(data=w_contrib, x='Weather Condition', y='Risk Contribution (%)', palette='Reds_r', order=['CLEAR', 'DUST_HAZE', 'EXTREME_HEAT', 'SANDSTORM'], ax=ax7)
         for container in ax7.containers:
             ax7.bar_label(container, fmt='%.1f%%', fontsize=11, weight='bold', color=mpl_text)
         apply_strict_theme_visibility(fig7, ax7, 'Total Safety Risk Contribution by Weather Condition', 'Recorded Weather Condition', 'Share of Total Airport Risk Pool (%)')
@@ -420,7 +408,6 @@ else:
         total_f_risk = train_df['safety_risk_score'].sum()
         f_contrib = ((train_df.groupby('fatigue_bracket', observed=False)['safety_risk_score'].sum() / total_f_risk) * 100).reset_index()
         f_contrib.columns = ['Fatigue Bracket', 'Risk Contribution (%)']
-        
         fig8, ax8 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=f_contrib, x='Fatigue Bracket', y='Risk Contribution (%)', palette='Oranges_r', ax=ax8)
         for container in ax8.containers:
@@ -431,7 +418,7 @@ else:
         plt.close(fig8)
 
     # -----------------------------------------------------------------
-    # ROW 5: Equipment Fault Tiers (Cell 19) & Comms Failures (Cell 20)
+    # ROW 5: Equipment Fault Tiers & Comms Failures
     # -----------------------------------------------------------------
     row5_col1, row5_col2 = st.columns(2)
     
@@ -460,7 +447,7 @@ else:
         plt.close(fig10)
 
     # -----------------------------------------------------------------
-    # ROW 6: Bivariate Intersections (Cells 21 & 22)
+    # ROW 6: Bivariate Intersections
     # -----------------------------------------------------------------
     row6_col1, row6_col2 = st.columns(2)
     
@@ -493,7 +480,7 @@ else:
         plt.close(fig12)
 
     # -----------------------------------------------------------------
-    # ROW 7: Faults+Comms | Weather Pie | Fatigue Pie — all figsize=(6,6) for equal height
+    # ROW 7: Faults+Comms | Weather Pie | Fatigue Pie
     # -----------------------------------------------------------------
     ROW7_FIGSIZE = (6, 6)
     row7_col1, row7_col2, row7_col3 = st.columns(3)
