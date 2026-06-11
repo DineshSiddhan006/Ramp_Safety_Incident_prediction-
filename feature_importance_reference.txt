@@ -1,0 +1,15 @@
+
+Feature Importance Reference
+
+Highest expected influence:
+1. visibility_meters
+2. wind_speed_kmph
+3. worker_fatigue_hours
+4. overtime_workers_count
+5. equipment_fault_count
+6. aircraft_on_ramp_count
+7. temperature_celsius
+8. communication_failure_count
+9. weather_condition
+10. active_staff_count
+11. day_traffic_profile
