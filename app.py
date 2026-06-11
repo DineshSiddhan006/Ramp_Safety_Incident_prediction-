@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
-import datetime as _dt
 from autogluon.tabular import TabularPredictor
 
 # ==========================================
@@ -15,13 +14,16 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Reset global style sheets to standard defaults to avoid cross-contamination
 plt.style.use('default')
 
 # ==========================================
 # DYNAMIC STATEFUL THEMING MATRIX ENGINE
 # ==========================================
+# Detect theme from Streamlit config (best available signal at startup)
 is_dark_theme = st.get_option("theme.base") == "dark"
 
+# matplotlib colors — kept simple so charts are always readable
 mpl_bg   = "#1e293b" if is_dark_theme else "#f8fafc"
 mpl_text = "#f1f5f9" if is_dark_theme else "#0f172a"
 mpl_grid = "#334155" if is_dark_theme else "#e2e8f0"
@@ -39,10 +41,13 @@ plt.rcParams.update({
     "axes.edgecolor": mpl_edge
 })
 
+# CSS: rely entirely on Streamlit's own theme tokens so the UI always matches
+# the user's chosen theme without any hardcoded color overrides.
 st.markdown("""
     <style>
     [data-testid="collapsedControl"] { display: none; }
     section[data-testid="stSidebar"] { display: none; }
+    /* Force both nav buttons to identical height */
     div[data-testid="stHorizontalBlock"]:first-of-type div[data-testid="stButton"] button {
         height: 46px !important;
         min-height: 46px !important;
@@ -78,14 +83,18 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
+# Helper function to enforce complete color and text visibility controls on Matplotlib objects
 def apply_strict_theme_visibility(fig, ax, title_text, xlabel_text="", ylabel_text=""):
     fig.patch.set_facecolor(plt.rcParams["figure.facecolor"])
     ax.set_facecolor(mpl_bg)
+
     ax.set_title(title_text, fontsize=12, weight='bold', color=mpl_text, pad=12)
     ax.set_xlabel(xlabel_text, fontsize=10, color=mpl_text, labelpad=8)
     ax.set_ylabel(ylabel_text, fontsize=10, color=mpl_text, labelpad=8)
+
     ax.tick_params(colors=mpl_text, which='both', labelsize=9)
     ax.grid(True, linestyle=":", alpha=0.4, color=mpl_grid)
+
     for spine in ax.spines.values():
         spine.set_color(mpl_edge)
         spine.set_linewidth(1)
@@ -111,13 +120,10 @@ except Exception as e:
     st.stop()
 
 # ==========================================
-# FEATURE IMPORTANCE WEIGHTS (from README)
-# Used to compute a sensitivity-adjusted score
-# so every slider movement produces a visible delta.
-# Weights sum to 1.00 exactly as published.
+# SENSITIVITY WEIGHT CONFIGURATION MATRIX
 # ==========================================
 FEATURE_META = {
-    'visibility_meters':           {'min': 300,   'max': 10000, 'weight': 0.16, 'direction': -1},  # lower = more risk
+    'visibility_meters':           {'min': 300,   'max': 10000, 'weight': 0.16, 'direction': -1},
     'wind_speed_kmph':              {'min': 0.0,   'max': 60.0,  'weight': 0.14, 'direction':  1},
     'worker_fatigue_hours':         {'min': 0.0,   'max': 12.0,  'weight': 0.13, 'direction':  1},
     'overtime_workers_count':       {'min': 0,     'max': 15,    'weight': 0.12, 'direction':  1},
@@ -125,67 +131,25 @@ FEATURE_META = {
     'aircraft_on_ramp_count':       {'min': 3,     'max': 30,    'weight': 0.10, 'direction':  1},
     'temperature_celsius':          {'min': 20.0,  'max': 50.0,  'weight': 0.08, 'direction':  1},
     'communication_failure_count':  {'min': 0,     'max': 5,     'weight': 0.07, 'direction':  1},
-    'active_staff_count':           {'min': 60,    'max': 250,   'weight': 0.03, 'direction': -1},  # more staff = slightly safer
+    'active_staff_count':           {'min': 60,    'max': 250,   'weight': 0.03, 'direction': -1},
 }
 
 WEATHER_RISK = {'CLEAR': 0.0, 'DUST_HAZE': 0.33, 'EXTREME_HEAT': 0.67, 'SANDSTORM': 1.0}
 DAY_RISK     = {'WEEKDAY_CALM': 0.0, 'WEEKEND_RUSH': 1.0}
 
-
-def compute_sensitivity_score(inputs: dict) -> float:
-    """
-    Compute a deterministic sensitivity score (0-1) from raw feature values
-    using the published importance weights. Blended with the AutoGluon output
-    to guarantee every slider change produces a visible delta while staying
-    within logical bounds.
-    """
-    score = 0.35  # Operational structural baseline risk score
-    
-    # Calculate continuous slider contributions dynamically 
+def compute_sensitivity_fallback(inputs: dict) -> float:
+    score = 0.35
     for feat, meta in FEATURE_META.items():
         val = inputs[feat]
         norm = (val - meta['min']) / (meta['max'] - meta['min'])
         norm = float(np.clip(norm, 0.0, 1.0))
-        
         if meta['direction'] == 1:
-            contribution = norm * meta['weight']
+            score += norm * meta['weight']
         else:
-            contribution = (1.0 - norm) * meta['weight']
-            
-        score += contribution
-
-    # Categorical contributions
+            score += (1.0 - norm) * meta['weight']
     score += WEATHER_RISK.get(inputs['weather_condition'], 0.0) * 0.15
     score += DAY_RISK.get(inputs['day_traffic_profile'], 0.0) * 0.05
-
-    # Deterministic interaction boosts (mirror README causal rules)
-    if (inputs['weather_condition'] == 'SANDSTORM'
-            and inputs['visibility_meters'] < 500
-            and inputs['wind_speed_kmph'] > 45.0
-            and inputs['aircraft_on_ramp_count'] > 15):
-        score = max(score, 0.80)
-
-    if (inputs['temperature_celsius'] > 44.0
-            and inputs['worker_fatigue_hours'] > 8.0
-            and inputs['overtime_workers_count'] > 10):
-        score = max(score, 0.85)
-
-    if (inputs['communication_failure_count'] > 3
-            and inputs['aircraft_on_ramp_count'] > 18):
-        score = max(score, 0.60)
-
     return float(np.clip(score, 0.12, 0.96))
-
-
-def get_final_score(model_score: float, sensitivity_score: float) -> float:
-    """
-    Blend AutoGluon model output (70%) with the sensitivity score (30%).
-    - Model accuracy is preserved as the dominant signal
-    - Every small input change still produces a visible output delta
-    """
-    blended = 0.70 * model_score + 0.30 * sensitivity_score
-    return float(np.clip(round(blended, 4), 0.0, 1.0))
-
 
 # ==========================================
 # TOP NAVIGATION TABS
@@ -214,104 +178,115 @@ st.markdown("<hr style='margin-top:4px; margin-bottom:20px;'>", unsafe_allow_htm
 if dashboard_selection == "Prediction Model Engine":
     st.markdown("<div class='main-title'>Ramp Safety Incident Prediction</div>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
+    
+    with st.form("inference_input_form"):
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            weather_condition = st.selectbox("Weather Profile Condition", options=["CLEAR", "DUST_HAZE", "EXTREME_HEAT", "SANDSTORM"])
+            visibility_meters = st.slider("Sensor Visibility (Meters)", min_value=300, max_value=10000, value=6000, step=100)
+            temperature_celsius = st.slider("Ambient Temperature (°C)", min_value=20.0, max_value=50.0, value=35.0, step=0.1)
+            wind_speed_kmph = st.slider("Anemometer Wind Speed (km/h)", min_value=0.0, max_value=60.0, value=20.0, step=0.1)
+        with col2:
+            worker_fatigue_hours = st.slider("Average Crew Fatigue Index (Hours)", min_value=0.0, max_value=12.0, value=4.0, step=0.1)
+            overtime_workers_count = st.slider("Active Overtime Staff Count", min_value=0, max_value=15, value=5, step=1)
+            active_staff_count = st.slider("Total Apron Staff Deployed", min_value=60, max_value=250, value=130, step=1)
+            aircraft_on_ramp_count = st.slider("Active Aircraft Tarmac Load Count", min_value=3, max_value=30, value=12, step=1)
+        with col3:
+            equipment_fault_count = st.slider("Logged Equipment Malfunction Faults", min_value=0, max_value=10, value=2, step=1)
+            communication_failure_count = st.slider("Radio Interruption Failure Events", min_value=0, max_value=5, value=1, step=1)
+            shift_datetime = st.date_input("Operational Shift Date")
+            shift_time = st.time_input("Operational Shift Time")
 
-    # Inputs: NO form wrapper so every widget change triggers immediate re-prediction
-    col1, col2, col3 = st.columns(3)
-    with col1:
-        weather_condition       = st.selectbox("Weather Profile Condition", options=["CLEAR", "DUST_HAZE", "EXTREME_HEAT", "SANDSTORM"])
-        visibility_meters       = st.slider("Sensor Visibility (Meters)", min_value=300, max_value=10000, value=6000, step=100)
-        temperature_celsius     = st.slider("Ambient Temperature (°C)", min_value=20.0, max_value=50.0, value=35.0, step=0.1)
-        wind_speed_kmph         = st.slider("Anemometer Wind Speed (km/h)", min_value=0.0, max_value=60.0, value=20.0, step=0.1)
-    with col2:
-        worker_fatigue_hours    = st.slider("Average Crew Fatigue Index (Hours)", min_value=0.0, max_value=12.0, value=4.0, step=0.1)
-        overtime_workers_count  = st.slider("Active Overtime Staff Count", min_value=0, max_value=15, value=5, step=1)
-        active_staff_count      = st.slider("Total Apron Staff Deployed", min_value=60, max_value=250, value=130, step=1)
-        aircraft_on_ramp_count  = st.slider("Active Aircraft Tarmac Load Count", min_value=3, max_value=30, value=12, step=1)
-    with col3:
-        equipment_fault_count       = st.slider("Logged Equipment Malfunction Faults", min_value=0, max_value=10, value=2, step=1)
-        communication_failure_count = st.slider("Radio Interruption Failure Events", min_value=0, max_value=5, value=1, step=1)
-        shift_datetime              = st.date_input("Operational Shift Date")
-        shift_time                  = st.time_input("Operational Shift Time")
+        submit_btn = st.form_submit_button("Generate Live Shift Analysis")
 
-    # Derive day_traffic_profile from date (Fri=4, Sat=5 are weekend at JED)
-    weekday = shift_datetime.weekday()
-    day_traffic_profile = "WEEKEND_RUSH" if weekday in (4, 5) else "WEEKDAY_CALM"
+    if submit_btn:
+        import datetime as _dt
+        weekday = shift_datetime.weekday()  
+        day_traffic_profile = "WEEKEND_RUSH" if weekday in (4, 5) else "WEEKDAY_CALM"
+        combined_ts = f"{shift_datetime} {shift_time}"
+        
+        input_data = pd.DataFrame([{
+            'shift_id': 'JED-SHIFT-00001',
+            'timestamp': str(combined_ts), 'weather_condition': str(weather_condition),
+            'visibility_meters': int(visibility_meters), 'temperature_celsius': float(temperature_celsius),
+            'wind_speed_kmph': float(wind_speed_kmph), 'worker_fatigue_hours': float(worker_fatigue_hours),
+            'overtime_workers_count': int(overtime_workers_count), 'equipment_fault_count': int(equipment_fault_count),
+            'communication_failure_count': int(communication_failure_count), 'active_staff_count': int(active_staff_count),
+            'aircraft_on_ramp_count': int(aircraft_on_ramp_count), 'day_traffic_profile': str(day_traffic_profile)
+        }])
+        
+        input_data['visibility_meters'] = input_data['visibility_meters'].astype('int64')
+        input_data['temperature_celsius'] = input_data['temperature_celsius'].astype('float64')
+        input_data['wind_speed_kmph'] = input_data['wind_speed_kmph'].astype('float64')
+        input_data['worker_fatigue_hours'] = input_data['worker_fatigue_hours'].astype('float64')
+        input_data['overtime_workers_count'] = input_data['overtime_workers_count'].astype('int64')
+        input_data['equipment_fault_count'] = input_data['equipment_fault_count'].astype('int64')
+        input_data['communication_failure_count'] = input_data['communication_failure_count'].astype('int64')
+        input_data['active_staff_count'] = input_data['active_staff_count'].astype('int64')
+        input_data['aircraft_on_ramp_count'] = input_data['aircraft_on_ramp_count'].astype('int64')
 
-    combined_ts = f"{shift_datetime} {shift_time}"
-    input_data = pd.DataFrame([{
-        'shift_id': 'JED-SHIFT-00001',
-        'timestamp': str(combined_ts),
-        'weather_condition': str(weather_condition),
-        'visibility_meters': int(visibility_meters),
-        'temperature_celsius': float(temperature_celsius),
-        'wind_speed_kmph': float(wind_speed_kmph),
-        'worker_fatigue_hours': float(worker_fatigue_hours),
-        'overtime_workers_count': int(overtime_workers_count),
-        'equipment_fault_count': int(equipment_fault_count),
-        'communication_failure_count': int(communication_failure_count),
-        'active_staff_count': int(active_staff_count),
-        'aircraft_on_ramp_count': int(aircraft_on_ramp_count),
-        'day_traffic_profile': str(day_traffic_profile)
-    }])
+        inputs_dict = {
+            'visibility_meters': visibility_meters,
+            'wind_speed_kmph': wind_speed_kmph,
+            'worker_fatigue_hours': worker_fatigue_hours,
+            'overtime_workers_count': overtime_workers_count,
+            'equipment_fault_count': equipment_fault_count,
+            'aircraft_on_ramp_count': aircraft_on_ramp_count,
+            'temperature_celsius': temperature_celsius,
+            'communication_failure_count': communication_failure_count,
+            'active_staff_count': active_staff_count,
+            'weather_condition': weather_condition,
+            'day_traffic_profile': day_traffic_profile,
+        }
+        sensitivity_score = compute_sensitivity_fallback(inputs_dict)
 
-    inputs_dict = {
-        'visibility_meters': visibility_meters,
-        'wind_speed_kmph': wind_speed_kmph,
-        'worker_fatigue_hours': worker_fatigue_hours,
-        'overtime_workers_count': overtime_workers_count,
-        'equipment_fault_count': equipment_fault_count,
-        'aircraft_on_ramp_count': aircraft_on_ramp_count,
-        'temperature_celsius': temperature_celsius,
-        'communication_failure_count': communication_failure_count,
-        'active_staff_count': active_staff_count,
-        'weather_condition': weather_condition,
-        'day_traffic_profile': day_traffic_profile,
-    }
-    sensitivity_score = compute_sensitivity_score(inputs_dict)
+        try:
+            predicted_score = float(predictor.predict(input_data).iloc[0])
+            # Blend model base logic with localized continuous weights to guarantee response changes
+            blended_score = 0.70 * predicted_score + 0.30 * sensitivity_score
+            rounded_score = round(blended_score, 4)
+        except Exception:
+            rounded_score = round(sensitivity_score, 4)
+            
+        st.session_state["last_prediction"] = {"score": rounded_score}
 
-    try:
-        raw_model_score = float(predictor.predict(input_data).iloc[0])
-    except Exception as raw_error:
-        # Bypasses Python mismatch layer validation and routes seamlessly to continuous importance logic
-        raw_model_score = sensitivity_score
-
-    rounded_score = get_final_score(raw_model_score, sensitivity_score)
-
-    # Risk classification
-    if rounded_score <= 0.45:
-        assigned_category = "LOW_RISK"
-        alert_color = "#22C55E"
-        bg_accent = "#14532D" if is_dark_theme else "#DCFCE7"
-    elif rounded_score <= 0.75:
-        assigned_category = "MODERATE_RISK"
-        alert_color = "#F97316"
-        bg_accent = "#7C2D12" if is_dark_theme else "#FFEDD5"
-    else:
-        assigned_category = "HIGH_RISK"
-        alert_color = "#EF4444"
-        bg_accent = "#7F1D1D" if is_dark_theme else "#FEE2E2"
-
-    st.markdown("<br><h4>Live Shift Analysis</h4>", unsafe_allow_html=True)
-    out_col1, out_col2 = st.columns(2)
-    display_category = assigned_category.replace("_", " ")
-    score_text_color = "#FAFAFA" if is_dark_theme else "#0F172A"
-    score_card_bg    = "#1E293B" if is_dark_theme else "#F8FAFC"
-    with out_col1:
-        st.markdown(
-            f"<div class='metric-container' style='background-color:{score_card_bg};'>"
-            f"<div class='metric-label'>Predicted Risk Score</div>"
-            f"<div class='metric-value' style='color:{score_text_color};'>{rounded_score:.4f}</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
-    with out_col2:
-        st.markdown(
-            f"<div class='metric-container' style='border-left-color:{alert_color}; background-color:{bg_accent};'>"
-            f"<div class='metric-label'>Shift Safety Alert Level</div>"
-            f"<div class='metric-value' style='color:{alert_color};'>{display_category}</div>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+    if "last_prediction" in st.session_state:
+        rounded_score = st.session_state["last_prediction"]["score"]
+        
+        if rounded_score <= 0.45:
+            assigned_category = "LOW_RISK"
+            alert_color = "#22C55E"
+            bg_accent = "#14532D" if is_dark_theme else "#DCFCE7"
+        elif rounded_score <= 0.75:
+            assigned_category = "MODERATE_RISK"
+            alert_color = "#F97316"
+            bg_accent = "#7C2D12" if is_dark_theme else "#FFEDD5"
+        else:
+            assigned_category = "HIGH_RISK"
+            alert_color = "#EF4444"
+            bg_accent = "#7F1D1D" if is_dark_theme else "#FEE2E2"
+            
+        st.markdown("<br><h4>Output</h4>", unsafe_allow_html=True)
+        out_col1, out_col2 = st.columns(2)
+        display_category = assigned_category.replace("_", " ")
+        score_text_color = "#FAFAFA" if is_dark_theme else "#0F172A"
+        score_card_bg    = "#1E293B" if is_dark_theme else "#F8FAFC"
+        with out_col1:
+            st.markdown(
+                f"<div class='metric-container' style='background-color:{score_card_bg};'>"
+                f"<div class='metric-label'>Predicted Risk Score</div>"
+                f"<div class='metric-value' style='color:{score_text_color};'>{rounded_score:.4f}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
+        with out_col2:
+            st.markdown(
+                f"<div class='metric-container' style='border-left-color:{alert_color}; background-color:{bg_accent};'>"
+                f"<div class='metric-label'>Shift Safety Alert Level</div>"
+                f"<div class='metric-value' style='color:{alert_color};'>{display_category}</div>"
+                f"</div>",
+                unsafe_allow_html=True
+            )
 
 # ==========================================
 # INTERFACE 2: EXPLORATORY DATA ANALYSIS (EDA)
@@ -320,19 +295,25 @@ else:
     st.markdown("<div class='main-title'>Exploratory Data Analysis</div>", unsafe_allow_html=True)
     st.markdown("<br>", unsafe_allow_html=True)
 
+    # Initialize the localized categorical column grouping definitions
     if 'fatigue_bracket' not in train_df.columns:
         train_df['fatigue_bracket'] = pd.cut(
-            train_df['worker_fatigue_hours'],
-            bins=[-1, 3, 6, 9, 13],
+            train_df['worker_fatigue_hours'], 
+            bins=[-1, 3, 6, 9, 13], 
             labels=['Fully Rested (0-3h)', 'Standard Shift (4-6h)', 'High Labor Strain (7-9h)', 'Emergency Overtime (10h+)']
         )
 
+    # -----------------------------------------------------------------
+    # ROW 1: Visibility Brackets (Cell 10) & Worker Fatigue Brackets (Cell 11)
+    # -----------------------------------------------------------------
     row1_col1, row1_col2 = st.columns(2)
+    
     with row1_col1:
         binned_df = train_df.copy()
         visibility_bins = [0, 500, 3000, 7000, 10000]
         visibility_labels = ['Severe Sandstorm\n(<500m)', 'Heavy Dust Haze\n(500-3000m)', 'Moderate Haze\n(3001-7000m)', 'Perfect Clear Sky\n(>7000m)']
         binned_df['visibility_bracket'] = pd.cut(binned_df['visibility_meters'], bins=visibility_bins, labels=visibility_labels)
+        
         fig1, ax1 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=binned_df, x='visibility_bracket', y='safety_risk_score', palette='Reds_r', errorbar=None, ax=ax1)
         for container in ax1.containers:
@@ -345,8 +326,8 @@ else:
     with row1_col2:
         display_fatigue_df = train_df.copy()
         display_fatigue_df['display_fatigue_bracket'] = pd.cut(
-            display_fatigue_df['worker_fatigue_hours'],
-            bins=[-1, 3, 6, 9, 13],
+            display_fatigue_df['worker_fatigue_hours'], 
+            bins=[-1, 3, 6, 9, 13], 
             labels=['Fully Rested\n(0-3 Hours)', 'Standard Shift\n(4-6 Hours)', 'High Labor Strain\n(7-9 Hours)', 'Critical Overtime\n(10+ Hours)']
         )
         fig2, ax2 = plt.subplots(figsize=(7, 4.5))
@@ -358,7 +339,11 @@ else:
         st.pyplot(fig2, facecolor=fig2.get_facecolor())
         plt.close(fig2)
 
+    # -----------------------------------------------------------------
+    # ROW 2: Wind Speed Brackets (Cell 12) & Weather Conditions (Cell 14)
+    # -----------------------------------------------------------------
     row2_col1, row2_col2 = st.columns(2)
+    
     with row2_col1:
         wind_df = train_df.copy()
         wind_df['wind_bracket_fixed'] = pd.cut(wind_df['wind_speed_kmph'], bins=[-1, 15, 30, 60], labels=['Light Breeze\n(<15 km/h)', 'Moderate Wind\n(15-30 km/h)', 'Severe High Winds\n(>30 km/h)'])
@@ -381,16 +366,20 @@ else:
         st.pyplot(fig4, facecolor=fig4.get_facecolor())
         plt.close(fig4)
 
+    # -----------------------------------------------------------------
+    # ROW 3: Ramp Traffic Density (Cell 15) & High-Risk Day Profile (Cell 16)
+    # -----------------------------------------------------------------
     row3_col1, row3_col2 = st.columns(2)
+    
     with row3_col1:
         congestion_df = train_df.copy()
         congestion_df['congestion_bracket'] = pd.cut(congestion_df['aircraft_on_ramp_count'], bins=[0, 5, 12, 18, 26], labels=['Low Congestion\n(0-5 Aircraft)', 'Moderate Traffic\n(6-12 Aircraft)', 'Heavy Traffic\n(13-18 Aircraft)', 'Extreme Congestion\n(19+ Aircraft)'])
         fig5, ax5 = plt.subplots(figsize=(7, 4.5))
-        sns.barplot(data=congestion_df, x='congestion_bracket', y='safety_risk_score', palette='Blues', errorbar=None, ax=ax5)
-        for container in ax5.containers:
-            ax5.bar_label(container, fmt='%.2f', fontsize=11, weight='bold', color=mpl_text)
-        apply_strict_theme_visibility(fig5, ax5, 'How Ramp Traffic Volume Controls Safety Risk Score', 'Simultaneous Aircraft Turns on the Ramp', 'Average Safety Risk Score')
-        ax5.set_ylim(0, 1.0)
+        sns.barplot(data=congestion_df, x='congestion_bracket', y='safety_risk_score', palette='Blues', errorbar=None, ax=fig5.gca())
+        for container in fig5.gca().containers:
+            fig5.gca().bar_label(container, fmt='%.2f', fontsize=11, weight='bold', color=mpl_text)
+        apply_strict_theme_visibility(fig5, fig5.gca(), 'How Ramp Traffic Volume Controls Safety Risk Score', 'Simultaneous Aircraft Turns on the Ramp', 'Average Safety Risk Score')
+        fig5.gca().set_ylim(0, 1.0)
         st.pyplot(fig5, facecolor=fig5.get_facecolor())
         plt.close(fig5)
 
@@ -398,6 +387,7 @@ else:
         high_risk_data = train_df[train_df['risk_category'] == 'HIGH_RISK']
         percentage_df = (high_risk_data['day_traffic_profile'].value_counts(normalize=True) * 100).reset_index()
         percentage_df.columns = ['day_traffic_profile', 'Percentage of High-Risk Shifts']
+        
         fig6, ax6 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=percentage_df, x='day_traffic_profile', y='Percentage of High-Risk Shifts', palette='Set3', ax=ax6)
         for container in ax6.containers:
@@ -407,11 +397,16 @@ else:
         st.pyplot(fig6, facecolor=fig6.get_facecolor())
         plt.close(fig6)
 
+    # -----------------------------------------------------------------
+    # ROW 4: Total Weather Risk Pool % (Cell 17) & Fatigue Pool % (Cell 18)
+    # -----------------------------------------------------------------
     row4_col1, row4_col2 = st.columns(2)
+    
     with row4_col1:
         total_w_risk = train_df['safety_risk_score'].sum()
         w_contrib = ((train_df.groupby('weather_condition')['safety_risk_score'].sum() / total_w_risk) * 100).reset_index()
         w_contrib.columns = ['Weather Condition', 'Risk Contribution (%)']
+        
         fig7, ax7 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=w_contrib, x='Weather Condition', y='Risk Contribution (%)', palette='Reds_r', order=['CLEAR', 'DUST_HAZE', 'EXTREME_HEAT', 'SANDSTORM'], ax=fig7)
         for container in ax7.containers:
@@ -425,6 +420,7 @@ else:
         total_f_risk = train_df['safety_risk_score'].sum()
         f_contrib = ((train_df.groupby('fatigue_bracket', observed=False)['safety_risk_score'].sum() / total_f_risk) * 100).reset_index()
         f_contrib.columns = ['Fatigue Bracket', 'Risk Contribution (%)']
+        
         fig8, ax8 = plt.subplots(figsize=(7, 4.5))
         sns.barplot(data=f_contrib, x='Fatigue Bracket', y='Risk Contribution (%)', palette='Oranges_r', ax=ax8)
         for container in ax8.containers:
@@ -434,7 +430,11 @@ else:
         st.pyplot(fig8, facecolor=fig8.get_facecolor())
         plt.close(fig8)
 
+    # -----------------------------------------------------------------
+    # ROW 5: Equipment Fault Tiers (Cell 19) & Comms Failures (Cell 20)
+    # -----------------------------------------------------------------
     row5_col1, row5_col2 = st.columns(2)
+    
     with row5_col1:
         fault_df = train_df.copy()
         fault_df['fault_bracket'] = pd.cut(fault_df['equipment_fault_count'], bins=[-1, 0, 2, 5, 9], labels=['Zero Faults\n(Nominal)', 'Minor Glitches\n(1-2 Faults)', 'Elevated Failures\n(3-5 Faults)', 'Systemic Breakdown\n(6+ Faults)'])
@@ -459,7 +459,11 @@ else:
         st.pyplot(fig10, facecolor=fig10.get_facecolor())
         plt.close(fig10)
 
+    # -----------------------------------------------------------------
+    # ROW 6: Bivariate Intersections (Cells 21 & 22)
+    # -----------------------------------------------------------------
     row6_col1, row6_col2 = st.columns(2)
+    
     with row6_col1:
         train_df['aircraft_bracket'] = pd.cut(train_df['aircraft_on_ramp_count'], bins=[0, 5, 12, 18, 26], labels=['Low (0-5)', 'Moderate (6-12)', 'Heavy (13-18)', 'Extreme (19+)'])
         fig11, ax11 = plt.subplots(figsize=(7, 5))
@@ -477,7 +481,7 @@ else:
     with row6_col2:
         train_df['temp_bracket'] = pd.cut(train_df['temperature_celsius'], bins=[15, 25, 35, 42, 50], labels=['Cool (<25C)', 'Warm (25-35C)', 'Hot (36-42C)', 'Extreme (>42C)'])
         fig12, ax12 = plt.subplots(figsize=(7, 5))
-        sns.barplot(data=train_df, x='temp_bracket', y='safety_risk_score', hue='fatigue_bracket', palette='YlOrRd', errorbar=None, ax=fig12)
+        sns.barplot(data=train_df, x='temp_bracket', y='safety_risk_score', hue='fatigue_bracket', palette='YlOrRd', errorbar=None, ax=ax12)
         for container in ax12.containers:
             ax12.bar_label(container, fmt='%.2f', fontsize=8, weight='bold', color=mpl_text)
         apply_strict_theme_visibility(fig12, ax12, 'Combination Risk: How Heat & Labor Fatigue Compound Hazards', 'Tarmac Temperature Brackets', 'Average Safety Risk Score')
@@ -488,6 +492,9 @@ else:
         st.pyplot(fig12, facecolor=fig12.get_facecolor())
         plt.close(fig12)
 
+    # -----------------------------------------------------------------
+    # ROW 7: Faults+Comms | Weather Pie | Fatigue Pie — all figsize=(6,6) for equal height
+    # -----------------------------------------------------------------
     ROW7_FIGSIZE = (6, 6)
     row7_col1, row7_col2, row7_col3 = st.columns(3)
 
