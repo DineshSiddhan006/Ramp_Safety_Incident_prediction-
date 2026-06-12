@@ -560,7 +560,7 @@ else:
             w_risk, autopct='%1.1f%%', startangle=90,
             colors=sns.color_palette('Blues_r', len(w_risk)),
             textprops={'fontsize': 10, 'weight': 'bold'},
-            pctdistance=0.68, radius=0.85,
+            pctdistance=0.68, radius=0.7,
         )
         for at in autotexts1:
             at.set_color('#FFFFFF')
@@ -584,7 +584,7 @@ else:
             f_risk, autopct='%1.1f%%', startangle=140,
             colors=sns.color_palette('Purples_r', len(f_risk)),
             textprops={'fontsize': 10, 'weight': 'bold'},
-            pctdistance=0.68, radius=0.85,
+            pctdistance=0.68, radius=0.7,
         )
         for at in autotexts2:
             at.set_color('#FFFFFF')
