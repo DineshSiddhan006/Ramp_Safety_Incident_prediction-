@@ -524,7 +524,7 @@ else:
     with row7_col2:
         train_df['fault_bracket_bi'] = pd.cut(train_df['equipment_fault_count'], bins=[-1, 0, 2, 5, 9], labels=['Zero (0)', 'Minor (1-2)', 'Elevated (3-5)', 'Systemic (6+)'])
         train_df['comm_bracket_bi'] = pd.cut(train_df['communication_failure_count'], bins=[-1, 0, 1, 2, 5], labels=['Perfect (0)', 'Hiccup (1)', 'Dropouts (2)', 'Blackout (3+)'])
-        fig13, ax13 = plt.subplots(figsize=(6, 6))
+        fig13, ax13 = plt.subplots(figsize=(7, 5))
         fig13.patch.set_facecolor(plt.rcParams["figure.facecolor"])
         ax13.set_facecolor(mpl_bg)
         sns.barplot(data=train_df, x='fault_bracket_bi', y='safety_risk_score', hue='comm_bracket_bi', palette='cubehelix', errorbar=None, ax=ax13)
@@ -548,7 +548,7 @@ else:
     # -----------------------------------------------------------------
     # ROW 8: Weather Pie & Fatigue Pie
     # -----------------------------------------------------------------
-    ROW8_FIGSIZE = (6, 6)
+    ROW8_FIGSIZE = (7, 5)
     row8_col1, row8_col2 = st.columns(2)
 
     with row8_col1:
