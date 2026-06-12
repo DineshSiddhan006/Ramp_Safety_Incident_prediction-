@@ -120,6 +120,38 @@ except Exception as e:
     st.stop()
 
 # ==========================================
+# SENSITIVITY WEIGHT CONFIGURATION MATRIX
+# ==========================================
+FEATURE_META = {
+    'visibility_meters':           {'min': 300,   'max': 10000, 'weight': 0.16, 'direction': -1},
+    'wind_speed_kmph':             {'min': 0.0,   'max': 60.0,  'weight': 0.14, 'direction':  1},
+    'worker_fatigue_hours':        {'min': 0.0,   'max': 12.0,  'weight': 0.13, 'direction':  1},
+    'overtime_workers_count':      {'min': 0,     'max': 15,    'weight': 0.12, 'direction':  1},
+    'equipment_fault_count':       {'min': 0,     'max': 10,    'weight': 0.11, 'direction':  1},
+    'aircraft_on_ramp_count':      {'min': 3,     'max': 30,    'weight': 0.10, 'direction':  1},
+    'temperature_celsius':         {'min': 20.0,  'max': 50.0,  'weight': 0.08, 'direction':  1},
+    'communication_failure_count': {'min': 0,     'max': 5,     'weight': 0.07, 'direction':  1},
+    'active_staff_count':          {'min': 60,    'max': 250,   'weight': 0.03, 'direction': -1},
+}
+
+WEATHER_RISK = {'CLEAR': 0.0, 'DUST_HAZE': 0.33, 'EXTREME_HEAT': 0.67, 'SANDSTORM': 1.0}
+DAY_RISK     = {'WEEKDAY_CALM': 0.0, 'WEEKEND_RUSH': 1.0}
+
+def compute_sensitivity_fallback(inputs: dict) -> float:
+    score = 0.35
+    for feat, meta in FEATURE_META.items():
+        val = inputs[feat]
+        norm = (val - meta['min']) / (meta['max'] - meta['min'])
+        norm = float(np.clip(norm, 0.0, 1.0))
+        if meta['direction'] == 1:
+            score += norm * meta['weight']
+        else:
+            score += (1.0 - norm) * meta['weight']
+    score += WEATHER_RISK.get(inputs['weather_condition'], 0.0) * 0.15
+    score += DAY_RISK.get(inputs['day_traffic_profile'], 0.0) * 0.05
+    return float(np.clip(score, 0.12, 0.96))
+
+# ==========================================
 # TOP NAVIGATION TABS
 # ==========================================
 if "dashboard_selection" not in st.session_state:
